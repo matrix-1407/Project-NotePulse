@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase, getCurrentUserProfile } from './supabaseClient';
 import Auth from './components/Auth';
-import Dashboard from './components/Dashboard';
+import Editor from './components/Editor';
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -91,7 +91,7 @@ export default function App() {
       {!user ? (
         <Auth onAuthSuccess={handleAuthSuccess} />
       ) : (
-        <Dashboard user={user} profile={profile} onSignOut={handleSignOut} />
+        <Editor user={user} profile={profile} onSignOut={handleSignOut} />
       )}
     </div>
   );
