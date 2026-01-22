@@ -1,0 +1,25 @@
+{
+  "name": "notepulse-frontend",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "lint": "echo \"no lint configured\""
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "yjs": "^13.5.45",
+    "y-websocket": "^1.4.5",
+    "@tiptap/react": "^2.0.0",
+    "@tiptap/starter-kit": "^2.0.0",
+    "@tiptap/extension-collaboration": "^2.0.0",
+    "@tiptap/extension-collaboration-cursor": "^2.0.0",
+    "@supabase/supabase-js": "^2.0.0"
+  },
+  "devDependencies": {
+    "vite": "^4.0.0",
+    "@vitejs/plugin-react": "^4.0.0"
+  }
+}
