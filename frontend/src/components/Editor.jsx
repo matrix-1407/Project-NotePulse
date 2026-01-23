@@ -2,6 +2,10 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
+import Collaboration from '@tiptap/extension-collaboration';
+import CollaborationCursor from '@tiptap/extension-collaboration-cursor';
+import * as Y from 'yjs';
+import { WebsocketProvider } from 'y-websocket';
 import { getUserDocument, saveDocument } from '../supabaseClient';
 
 export default function Editor({ user, onSignOut }) {
@@ -13,15 +17,41 @@ export default function Editor({ user, onSignOut }) {
   const [tookTooLong, setTookTooLong] = useState(false);
   const saveTimeoutRef = useRef(null);
   const hasLoadedRef = useRef(false);
+  const ydocRef = useRef(null);
+  const providerRef = useRef(null);
+
+  // Initialize Yjs document and WebSocket provider
+  if (!ydocRef.current) {
+    ydocRef.current = new Y.Doc();
+  }
+
+  if (!providerRef.current && user) {
+    providerRef.current = new WebsocketProvider(
+      'ws://localhost:1234',
+      'default-document',
+      ydocRef.current
+    );
+  }
 
   const editor = useEditor({
     extensions: [
-      StarterKit,
+      StarterKit.configure({
+        history: false, // Disable default history (Yjs handles it)
+      }),
       Placeholder.configure({
         placeholder: 'Start typing here...',
       }),
+      Collaboration.configure({
+        document: ydocRef.current,
+      }),
+      CollaborationCursor.configure({
+        provider: providerRef.current,
+        user: {
+          name: user?.email || 'Anonymous',
+          color: '#' + Math.floor(Math.random() * 16777215).toString(16),
+        },
+      }),
     ],
-    content: '<p></p>',
     autofocus: true,
     editorProps: {
       attributes: {
@@ -30,7 +60,7 @@ export default function Editor({ user, onSignOut }) {
       },
     },
     onUpdate: ({ editor }) => {
-      // Debounce auto-save
+      // Debounce auto-save to Supabase as fallback
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current);
       }
@@ -60,6 +90,11 @@ export default function Editor({ user, onSignOut }) {
         clearTimeout(saveTimeoutRef.current);
       }
       clearTimeout(timeoutId);
+      // Cleanup WebSocket provider on unmount
+      if (providerRef.current) {
+        providerRef.current.destroy();
+        providerRef.current = null;
+      }
     };
   }, [editor]);
 
@@ -79,12 +114,11 @@ export default function Editor({ user, onSignOut }) {
 
       setDocument(doc);
 
-      // Load content into editor
-      if (currentEditor) {
+      // Load content into editor only if Yjs doc is empty (first load)
+      // This preserves realtime collaboration state
+      if (currentEditor && ydocRef.current.store.clients.size === 0) {
         if (doc.content && doc.content.type) {
           currentEditor.commands.setContent(doc.content);
-        } else {
-          currentEditor.commands.setContent({ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Start typing...' }] }] });
         }
       }
     } catch (err) {

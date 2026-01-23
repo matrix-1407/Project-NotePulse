@@ -30,26 +30,18 @@ async function withTimeout(promise, ms, label) {
  */
 export async function getCurrentUserProfile() {
   try {
-    const { data: { session }, error: sessionError } = await withTimeout(
-      supabase.auth.getSession(),
-      7000,
-      'auth getSession (profile)'
-    );
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
 
     if (sessionError) throw sessionError;
     const user = session?.user;
     if (!user) return null;
 
     // Fetch profile if it exists; 406 (no row) is expected when the row is missing
-    const { data: profile, error: profileError } = await withTimeout(
-      supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', user.id)
-        .maybeSingle(),
-      7000,
-      'fetch profile'
-    );
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', user.id)
+      .maybeSingle();
 
     if (!profileError && profile) {
       return profile;
@@ -63,6 +55,10 @@ export async function getCurrentUserProfile() {
     // The profile is optional for the editor to function
     return null;
   } catch (error) {
+    // Profile is optional, don't log timeout errors
+    if (error?.message?.includes('Timeout')) {
+      return null;
+    }
     console.error('Error in getCurrentUserProfile:', error);
     return null;
   }

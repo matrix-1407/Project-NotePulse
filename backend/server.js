@@ -1,8 +1,9 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import { WebSocketServer } from 'ws';
 import http from 'http';
+import { WebSocketServer } from 'ws';
+import { setupWSConnection } from 'y-websocket/bin/utils';
 import docsRoutes from './routes/docs.js';
 
 dotenv.config();
@@ -22,35 +23,17 @@ app.get('/', (req, res) => {
 
 app.use('/api/docs', docsRoutes);
 
-// Create HTTP server for potential future HTTPS/upgrade
+// Create HTTP server
 const server = http.createServer(app);
 
 /**
- * Setup Yjs WebSocket Server
- * This server manages real-time document collaboration via Yjs
- * For production, consider using y-websocket middleware or a dedicated service
+ * Setup Yjs WebSocket Server for real-time collaboration
  */
 const wss = new WebSocketServer({ port: Y_WEBSOCKET_PORT });
 
-// Store document states (in-memory for scaffold)
-const docs = new Map();
-
 wss.on('connection', (ws, req) => {
-  console.log(`Y-WebSocket client connected from ${req.socket.remoteAddress}`);
-
-  ws.on('message', (data) => {
-    console.log(`Received Yjs message: ${data.length} bytes`);
-    // TODO: Implement y-websocket protocol handling
-    // For full implementation, use y-websocket package with persistence layer
-  });
-
-  ws.on('close', () => {
-    console.log('Y-WebSocket client disconnected');
-  });
-
-  ws.on('error', (error) => {
-    console.error('Y-WebSocket error:', error);
-  });
+  console.log(`Yjs client connected from ${req.socket.remoteAddress}`);
+  setupWSConnection(ws, req);
 });
 
 console.log(`Yjs WebSocket server listening on ws://localhost:${Y_WEBSOCKET_PORT}`);
@@ -72,5 +55,3 @@ process.on('SIGTERM', () => {
     process.exit(0);
   });
 });
-
-export { wss, docs };
