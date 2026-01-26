@@ -6,7 +6,7 @@ import Collaboration from '@tiptap/extension-collaboration';
 import CollaborationCursor from '@tiptap/extension-collaboration-cursor';
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
-import { getDocumentById, getUserDocument, saveDocument, saveDocumentSnapshot, upsertPresence } from '../supabaseClient';
+import { getDocumentById, getDocumentCollaborators, getUserDocument, inviteCollaboratorByEmail, saveDocument, saveDocumentSnapshot, upsertPresence } from '../supabaseClient';
 import { useUnsavedWarning } from '../hooks/useUnsavedWarning';
 import PresencePanel from './PresencePanel';
 import ConnectionStatus from './ConnectionStatus';
@@ -25,6 +25,8 @@ export default function Editor({ user, onSignOut }) {
   const [saveMessage, setSaveMessage] = useState('');
   const [provider, setProvider] = useState(null);
   const [docIdHint, setDocIdHint] = useState('');
+  const [collaborators, setCollaborators] = useState([]);
+  const [collabMessage, setCollabMessage] = useState('');
   const saveTimeoutRef = useRef(null);
   const hasLoadedRef = useRef(false);
   const initialContentAppliedRef = useRef(false);
@@ -66,29 +68,6 @@ export default function Editor({ user, onSignOut }) {
   if (!userColorRef.current) {
     userColorRef.current = hashToColor(user?.id || user?.email || 'anonymous');
   }
-
-  // Define save handlers BEFORE useEditor hook (they are referenced in useEditor config)
-  const handleAutoSave = useCallback(
-    async (currentEditor) => {
-      if (!document || !currentEditor) return;
-
-      setIsSaving(true);
-      const content = currentEditor.getJSON();
-
-      const result = await saveDocument(document.id, content);
-
-      if (!result.success) {
-        setError('Failed to save document');
-        console.error('Save error:', result.error);
-      } else {
-        setError('');
-        setLastSavedAt(new Date());
-      }
-
-      setIsSaving(false);
-    },
-    [document]
-  );
 
   const handleManualSave = async () => {
     if (!editor || !document) return;
@@ -153,17 +132,8 @@ export default function Editor({ user, onSignOut }) {
       },
     },
     onUpdate: ({ editor }) => {
-      // Mark as dirty when content changes
+      // Mark as dirty when content changes (Yjs handles sync)
       setIsDirty(true);
-      
-      // Debounce auto-save to Supabase as fallback (every 60 seconds)
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
-      }
-
-      saveTimeoutRef.current = setTimeout(() => {
-        handleAutoSave(editor);
-      }, 60000); // 60 seconds = 1 minute
     },
   }, [provider, user?.email]);
 
@@ -248,6 +218,20 @@ export default function Editor({ user, onSignOut }) {
     return () => {
       clearInterval(interval);
       upsertPresence(document.id, 'offline');
+    };
+  }, [document?.id]);
+
+  // Load collaborators list (best-effort)
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      if (!document?.id) return;
+      const list = await getDocumentCollaborators(document.id);
+      if (!cancelled) setCollaborators(list);
+    };
+    run();
+    return () => {
+      cancelled = true;
     };
   }, [document?.id]);
 
@@ -422,6 +406,35 @@ export default function Editor({ user, onSignOut }) {
           >
             Join
           </button>
+          {document?.user_id === user?.id && (
+            <button
+              onClick={async () => {
+                if (!document?.id) return;
+                const email = window.prompt('Invite collaborator by email:');
+                if (!email) return;
+
+                const roleInput = window.prompt('Role for collaborator? (editor/viewer)', 'editor');
+                const role = (roleInput || 'editor').trim().toLowerCase() === 'viewer' ? 'viewer' : 'editor';
+
+                setCollabMessage('Inviting...');
+                const result = await inviteCollaboratorByEmail(document.id, email, role);
+                if (!result?.success) {
+                  setCollabMessage(result?.error || 'Invite failed');
+                  setTimeout(() => setCollabMessage(''), 4000);
+                  return;
+                }
+
+                setCollabMessage('Invited');
+                setTimeout(() => setCollabMessage(''), 2500);
+                const list = await getDocumentCollaborators(document.id);
+                setCollaborators(list);
+              }}
+              className="history-btn"
+              title="Invite collaborator"
+            >
+              Invite
+            </button>
+          )}
           <button onClick={() => setShowHistory(!showHistory)} className="history-btn">
             History
           </button>
@@ -432,6 +445,17 @@ export default function Editor({ user, onSignOut }) {
       </div>
 
       <MetadataBar document={document} />
+
+      {(collabMessage || (document?.user_id !== user?.id && collaborators.length > 0)) && (
+        <div className="editor-subheader">
+          {collabMessage && <span className="save-message">{collabMessage}</span>}
+          {document?.user_id !== user?.id && (
+            <span className="saved-indicator">
+              Viewing as collaborator
+            </span>
+          )}
+        </div>
+      )}
 
       <div className="editor-main">
         <div className="editor-workspace">
@@ -494,7 +518,28 @@ export default function Editor({ user, onSignOut }) {
           <EditorContent editor={editor} className="editor-content" />
         </div>
 
-        <PresencePanel provider={provider} documentId={document?.id} />
+        <div>
+          <PresencePanel provider={provider} documentId={document?.id} />
+          {collaborators.length > 0 && (
+            <div className="presence-panel" style={{ marginTop: 12 }}>
+              <h3>Collaborators ({collaborators.length})</h3>
+              <div className="presence-list">
+                {collaborators.map((c) => {
+                  const label = c.profile?.full_name || c.profile?.email || c.user_id?.substring(0, 8);
+                  return (
+                    <div key={c.user_id} className="presence-user" title={c.profile?.email || ''}>
+                      <div className="presence-avatar" style={{ backgroundColor: '#475569' }}>
+                        {(label || '?').substring(0, 2).toUpperCase()}
+                      </div>
+                      <span className="presence-name">{label}</span>
+                      <span style={{ marginLeft: 'auto', opacity: 0.7, fontSize: 12 }}>{c.role}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {showHistory && (

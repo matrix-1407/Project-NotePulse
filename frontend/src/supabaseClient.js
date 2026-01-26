@@ -63,7 +63,7 @@ export async function getCurrentUserProfile() {
     const user = session?.user;
     if (!user) return null;
 
-    // Fetch profile if it exists; 406 (no row) is expected when the row is missing
+    // Fetch profile (no timeout - it's non-critical)
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
       .select('*')
@@ -78,9 +78,32 @@ export async function getCurrentUserProfile() {
       console.error('Error fetching profile:', profileError);
     }
 
-    // Return null gracefully if profile doesn't exist or fetch fails
-    // The profile is optional for the editor to function
-    return null;
+    // If profile doesn't exist, try to create it (helps Invite-by-email).
+    // This is safe under RLS when profiles_insert_own exists.
+    try {
+      const { data: created, error: insertError } = await supabase
+        .from('profiles')
+        .upsert(
+          {
+            id: user.id,
+            email: user.email || '',
+            full_name: user.user_metadata?.full_name || null,
+          },
+          { onConflict: 'id' }
+        )
+        .select('*')
+        .maybeSingle();
+
+      if (insertError) {
+        logSupabaseError('Error creating profile row', insertError);
+        return null;
+      }
+
+      return created || null;
+    } catch (e) {
+      console.error('Error attempting to create profile:', e);
+      return null;
+    }
   } catch (error) {
     // Profile is optional, don't log timeout errors
     if (error?.message?.includes('Timeout')) {
@@ -162,18 +185,19 @@ export async function createItem(title, description) {
 export async function getUserDocument(userId) {
   try {
     // Prefer caller-provided user ID to avoid extra auth round trips on refresh
-    let effectiveUserId = userId;
-    if (!effectiveUserId) {
-      const { data: { user }, error: authError } = await withTimeout(
-        supabase.auth.getUser(),
-        7000,
-        'auth getUser (document)'
-      );
-      if (authError) throw authError;
-      effectiveUserId = user?.id;
+    // Ensure we actually have an authenticated session; otherwise inserts will 403 under RLS.
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError) {
+      logSupabaseError('Error getting session (document)', sessionError);
+    }
+    if (!session?.user) {
+      console.error('No active session - cannot fetch/create document');
+      return null;
     }
 
-    if (!effectiveUserId) return null;
+    // IMPORTANT: Always use the session user id for document operations.
+    // RLS policies check auth.uid(), and caller-provided ids can mismatch and cause 403.
+    const effectiveUserId = session.user.id;
 
     // Prefer last opened document (helps two tabs/browsers land on same doc)
     const lastDocId = getLastOpenedDocumentId(effectiveUserId);
@@ -212,7 +236,7 @@ export async function getUserDocument(userId) {
     );
 
     if (fetchError) {
-      console.error('Error fetching document:', fetchError);
+      logSupabaseError('Error fetching document', fetchError);
     }
 
     if (data && data.length > 0) {
@@ -238,7 +262,7 @@ export async function getUserDocument(userId) {
     );
 
     if (insertError) {
-      console.error('Error creating document:', insertError);
+      logSupabaseError('Error creating document', insertError);
       return null;
     }
 
@@ -321,6 +345,7 @@ export async function saveDocument(documentId, content) {
     if (!session?.user) return { success: false, error: 'Not authenticated' };
 
     const user = session.user;
+    console.log('💾 Attempting to save document:', documentId, 'user:', user.id);
 
     const { error } = await withTimeout(
       supabase
@@ -336,10 +361,12 @@ export async function saveDocument(documentId, content) {
     );
 
     if (error) {
+      console.error('❌ Save failed:', error);
       logSupabaseError('Error saving document', error);
       return { success: false, error: error.message };
     }
 
+    console.log('✅ Document saved successfully');
     return { success: true };
   } catch (error) {
     if (error?.name === 'AbortError') {
@@ -403,6 +430,7 @@ export async function saveDocumentSnapshot(documentId, content, snapshotType = '
  */
 export async function getDocumentHistory(documentId, limit = 20) {
   try {
+    console.log('📜 Fetching history for document:', documentId);
     const { data, error } = await supabase
       .from('documents_history')
       .select('id, content, snapshot_type, created_at, user_id')
@@ -411,10 +439,12 @@ export async function getDocumentHistory(documentId, limit = 20) {
       .limit(limit);
 
     if (error) {
+      console.error('❌ History fetch failed:', error);
       logSupabaseError('Error fetching history', error);
       return { data: [], error };
     }
 
+    console.log('✅ History loaded:', data?.length || 0, 'snapshots');
     return { data: data || [], error: null };
   } catch (error) {
     console.error('Error in getDocumentHistory:', error);
@@ -480,6 +510,131 @@ export async function getDocumentPresence(documentId) {
     return data || [];
   } catch (error) {
     console.error('Error in getDocumentPresence:', error);
+    return [];
+  }
+}
+
+function normalizeEmail(email) {
+  if (!email) return '';
+  return String(email).trim().toLowerCase();
+}
+
+/**
+ * Helper: Lookup a profile by email (for inviting collaborators)
+ */
+export async function getProfileByEmail(email) {
+  try {
+    const normalized = normalizeEmail(email);
+    if (!normalized) return { profile: null, error: 'Missing email' };
+
+    console.log('🔍 Looking up profile for email:', normalized);
+
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id,email,full_name,created_at')
+      .ilike('email', normalized)
+      .maybeSingle();
+
+    if (error) {
+      console.error('❌ Profile lookup failed:', error);
+      logSupabaseError('Error looking up profile by email', error);
+      return { profile: null, error: error.message };
+    }
+
+    if (!data) {
+      console.warn('⚠️ No profile found for email:', normalized);
+      return { profile: null, error: 'No user found with that email' };
+    }
+
+    console.log('✅ Profile found:', data.id);
+    return { profile: data, error: null };
+  } catch (error) {
+    console.error('Error in getProfileByEmail:', error);
+    return { profile: null, error: error.message };
+  }
+}
+
+/**
+ * Helper: Invite (upsert) a collaborator by email.
+ * Requires the current user to be the document owner (enforced by RLS).
+ */
+export async function inviteCollaboratorByEmail(documentId, email, role = 'editor') {
+  try {
+    if (!documentId) return { success: false, error: 'Missing document id' };
+
+    const normalizedRole = role === 'viewer' ? 'viewer' : 'editor';
+    console.log('📧 Inviting collaborator:', email, 'as', normalizedRole);
+
+    const { profile, error: lookupError } = await getProfileByEmail(email);
+    if (lookupError) return { success: false, error: lookupError };
+
+    const { data, error } = await supabase
+      .from('document_collaborators')
+      .upsert(
+        {
+          document_id: documentId,
+          user_id: profile.id,
+          role: normalizedRole,
+        },
+        {
+          onConflict: 'document_id,user_id',
+        }
+      )
+      .select('id,document_id,user_id,role,created_at')
+      .maybeSingle();
+
+    if (error) {
+      console.error('❌ Invite failed:', error);
+      logSupabaseError('Error inviting collaborator', error);
+      return { success: false, error: error.message };
+    }
+
+    console.log('✅ Collaborator invited successfully');
+    return { success: true, data: data || null };
+  } catch (error) {
+    console.error('Error in inviteCollaboratorByEmail:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Helper: List collaborators for a document.
+ */
+export async function getDocumentCollaborators(documentId) {
+  try {
+    if (!documentId) return [];
+
+    const { data, error } = await supabase
+      .from('document_collaborators')
+      .select('user_id, role, created_at')
+      .eq('document_id', documentId)
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      logSupabaseError('Error fetching collaborators', error);
+      return [];
+    }
+
+    const rows = data || [];
+    const ids = rows.map((r) => r.user_id).filter(Boolean);
+    if (ids.length === 0) return [];
+
+    const { data: profiles, error: profilesError } = await supabase
+      .from('profiles')
+      .select('id,email,full_name')
+      .in('id', ids);
+
+    if (profilesError) {
+      logSupabaseError('Error fetching collaborator profiles', profilesError);
+    }
+
+    const byId = new Map((profiles || []).map((p) => [p.id, p]));
+    return rows.map((r) => ({
+      ...r,
+      profile: byId.get(r.user_id) || null,
+    }));
+  } catch (error) {
+    console.error('Error in getDocumentCollaborators:', error);
     return [];
   }
 }
