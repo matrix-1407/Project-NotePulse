@@ -20,6 +20,24 @@ function logSupabaseError(context, error) {
   });
 }
 
+function getLastOpenedDocumentId(userId) {
+  try {
+    if (!userId) return null;
+    return window.localStorage.getItem(`notepulse:lastDocId:${userId}`);
+  } catch {
+    return null;
+  }
+}
+
+function setLastOpenedDocumentId(userId, documentId) {
+  try {
+    if (!userId || !documentId) return;
+    window.localStorage.setItem(`notepulse:lastDocId:${userId}`, documentId);
+  } catch {
+    // ignore
+  }
+}
+
 // Promise timeout helper to avoid hanging spinners when Supabase calls stall
 async function withTimeout(promise, ms, label) {
   let timeoutId;
@@ -157,6 +175,30 @@ export async function getUserDocument(userId) {
 
     if (!effectiveUserId) return null;
 
+    // Prefer last opened document (helps two tabs/browsers land on same doc)
+    const lastDocId = getLastOpenedDocumentId(effectiveUserId);
+    if (lastDocId) {
+      const { data: lastDoc, error: lastDocError } = await withTimeout(
+        supabase
+          .from('documents')
+          .select('id,user_id,title,content,created_at,updated_at,last_edited_by')
+          .eq('id', lastDocId)
+          .maybeSingle(),
+        7000,
+        'fetch last opened document'
+      );
+
+      if (!lastDocError && lastDoc) {
+        setLastOpenedDocumentId(effectiveUserId, lastDoc.id);
+        return lastDoc;
+      }
+
+      if (lastDocError) {
+        // Non-fatal: fall back to default document selection
+        logSupabaseError('Error fetching last opened document', lastDocError);
+      }
+    }
+
     // Fetch latest document for this user (safe even if none exists)
     const { data, error: fetchError } = await withTimeout(
       supabase
@@ -174,6 +216,7 @@ export async function getUserDocument(userId) {
     }
 
     if (data && data.length > 0) {
+      setLastOpenedDocumentId(effectiveUserId, data[0].id);
       return data[0];
     }
 
@@ -199,7 +242,28 @@ export async function getUserDocument(userId) {
       return null;
     }
 
-    return newDoc;
+    // Converge on a single default doc even if two sessions created one at the same time.
+    // Always return the earliest created document for this user.
+    const { data: canonical, error: canonicalError } = await withTimeout(
+      supabase
+        .from('documents')
+        .select('id,user_id,title,content,created_at,updated_at,last_edited_by')
+        .eq('user_id', effectiveUserId)
+        .order('created_at', { ascending: true })
+        .limit(1),
+      7000,
+      'fetch canonical document'
+    );
+
+    if (canonicalError) {
+      logSupabaseError('Error fetching canonical document', canonicalError);
+      setLastOpenedDocumentId(effectiveUserId, newDoc.id);
+      return newDoc;
+    }
+
+    const chosen = canonical?.[0] || newDoc;
+    setLastOpenedDocumentId(effectiveUserId, chosen.id);
+    return chosen;
   } catch (error) {
     if (error?.name === 'AbortError') {
       console.warn('getUserDocument aborted');
@@ -232,6 +296,9 @@ export async function getDocumentById(documentId) {
       return null;
     }
 
+    if (data?.user_id) {
+      setLastOpenedDocumentId(data.user_id, data.id);
+    }
     return data || null;
   } catch (error) {
     if (error?.name === 'AbortError') {

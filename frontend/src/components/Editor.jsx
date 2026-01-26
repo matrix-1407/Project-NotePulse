@@ -24,6 +24,7 @@ export default function Editor({ user, onSignOut }) {
   const [showHistory, setShowHistory] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
   const [provider, setProvider] = useState(null);
+  const [docIdHint, setDocIdHint] = useState('');
   const saveTimeoutRef = useRef(null);
   const hasLoadedRef = useRef(false);
   const initialContentAppliedRef = useRef(false);
@@ -304,6 +305,7 @@ export default function Editor({ user, onSignOut }) {
     try {
       const params = new URLSearchParams(window.location.search);
       const docIdFromUrl = params.get('doc');
+      setDocIdHint(docIdFromUrl || '');
       const doc = docIdFromUrl
         ? await getDocumentById(docIdFromUrl)
         : await getUserDocument(user?.id);
@@ -395,6 +397,30 @@ export default function Editor({ user, onSignOut }) {
             title="Copy share link"
           >
             Share
+          </button>
+          <button
+            onClick={() => {
+              const current = docIdHint || document?.id || '';
+              const input = window.prompt('Enter a Document ID (uuid) or a full share link:', current);
+              if (!input) return;
+              let nextId = input.trim();
+              try {
+                if (nextId.includes('http')) {
+                  const url = new URL(nextId);
+                  const fromParam = new URLSearchParams(url.search).get('doc');
+                  if (fromParam) nextId = fromParam;
+                }
+              } catch {
+                // ignore
+              }
+              const url = new URL(window.location.href);
+              url.searchParams.set('doc', nextId);
+              window.location.href = url.toString();
+            }}
+            className="history-btn"
+            title="Join a shared document"
+          >
+            Join
           </button>
           <button onClick={() => setShowHistory(!showHistory)} className="history-btn">
             History
