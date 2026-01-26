@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { supabase, getCurrentUserProfile } from './supabaseClient';
 import Auth from './components/Auth';
 import Editor from './components/Editor';
+import Debug from './pages/Debug';
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -9,12 +10,12 @@ export default function App() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check active session on mount
-    checkUser();
+    let authCompleted = false;
 
-    // Listen for auth state changes
+    // Listen for auth state changes (this will handle both initial load and state changes)
     const { data: authListener } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        authCompleted = true;
         if (session?.user) {
           setUser(session.user);
           await loadProfile(session.user);
@@ -26,31 +27,19 @@ export default function App() {
       }
     );
 
+    // Fallback timeout to prevent infinite loading (extended to 10 seconds)
+    const timeoutId = setTimeout(() => {
+      if (!authCompleted) {
+        console.warn('Auth state change listener did not complete within 10 seconds, proceeding anyway');
+        setLoading(false);
+      }
+    }, 10000);
+
     return () => {
+      clearTimeout(timeoutId);
       authListener?.subscription?.unsubscribe();
     };
   }, []);
-
-  const checkUser = async () => {
-    try {
-      const { data: { session }, error } = await supabase.auth.getSession();
-      
-      if (error) {
-        console.error('Session error:', error);
-        setLoading(false);
-        return;
-      }
-
-      if (session?.user) {
-        setUser(session.user);
-        await loadProfile(session.user);
-      }
-    } catch (err) {
-      console.error('Error checking user:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const loadProfile = async (currentUser) => {
     try {
@@ -84,6 +73,10 @@ export default function App() {
         </div>
       </div>
     );
+  }
+
+  if (window.location.pathname === '/debug') {
+    return <Debug />;
   }
 
   return (

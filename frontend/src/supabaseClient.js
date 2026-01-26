@@ -11,6 +11,15 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '');
 
+function logSupabaseError(context, error) {
+  if (!error) return;
+  console.error(`${context}: ${error.message || 'Unknown error'}`, {
+    code: error.code,
+    details: error.details,
+    hint: error.hint,
+  });
+}
+
 // Promise timeout helper to avoid hanging spinners when Supabase calls stall
 async function withTimeout(promise, ms, label) {
   let timeoutId;
@@ -202,33 +211,65 @@ export async function getUserDocument(userId) {
 }
 
 /**
+ * Helper: Fetch a document by id (used for shared/collab docs)
+ */
+export async function getDocumentById(documentId) {
+  try {
+    if (!documentId) return null;
+
+    const { data, error } = await withTimeout(
+      supabase
+        .from('documents')
+        .select('id,user_id,title,content,created_at,updated_at,last_edited_by')
+        .eq('id', documentId)
+        .maybeSingle(),
+      7000,
+      'fetch document by id'
+    );
+
+    if (error) {
+      logSupabaseError('Error fetching document by id', error);
+      return null;
+    }
+
+    return data || null;
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      console.warn('getDocumentById aborted');
+      return null;
+    }
+    console.error('Error in getDocumentById:', error);
+    return null;
+  }
+}
+
+/**
  * Helper: Save document content
  */
 export async function saveDocument(documentId, content) {
   try {
-    const { data: { user }, error: authError } = await withTimeout(
-      supabase.auth.getUser(),
-      7000,
-      'auth getUser (save)'
-    );
-    if (authError) throw authError;
-    if (!user) return { success: false, error: 'Not authenticated' };
+    // Get session instead of user to avoid timeout
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError) throw sessionError;
+    if (!session?.user) return { success: false, error: 'Not authenticated' };
+
+    const user = session.user;
 
     const { error } = await withTimeout(
       supabase
       .from('documents')
       .update({
         content,
+        last_edited_by: user.id,
         updated_at: new Date().toISOString(),
       })
-      .eq('id', documentId)
-      .eq('user_id', user.id),
+      .eq('id', documentId),
       7000,
       'update document'
     );
 
     if (error) {
-      console.error('Error saving document:', error);
+      logSupabaseError('Error saving document', error);
       return { success: false, error: error.message };
     }
 
@@ -240,5 +281,138 @@ export async function saveDocument(documentId, content) {
     }
     console.error('Error in saveDocument:', error);
     return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Helper: Save a document snapshot to history
+ */
+export async function saveDocumentSnapshot(documentId, content, snapshotType = 'manual') {
+  try {
+    // Get session instead of user to avoid timeout
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError) throw sessionError;
+    if (!session?.user) {
+      console.error('Not authenticated - cannot save snapshot');
+      return { success: false, error: 'Not authenticated' };
+    }
+
+    const user = session.user;
+    console.log('Saving snapshot for document:', documentId, 'user:', user.id);
+
+    const { data, error } = await supabase
+      .from('documents_history')
+      .insert([
+        {
+          document_id: documentId,
+          user_id: user.id,
+          content,
+          snapshot_type: snapshotType,
+          note: `${snapshotType} snapshot`,
+        }
+      ]);
+
+    if (error) {
+      logSupabaseError('Supabase error saving snapshot', error);
+      return {
+        success: false,
+        error: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code,
+      };
+    }
+
+    console.log('Snapshot saved successfully:', data);
+    return { success: true };
+  } catch (error) {
+    console.error('Exception in saveDocumentSnapshot:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Helper: Get document history snapshots
+ */
+export async function getDocumentHistory(documentId, limit = 20) {
+  try {
+    const { data, error } = await supabase
+      .from('documents_history')
+      .select('id, content, snapshot_type, created_at, user_id')
+      .eq('document_id', documentId)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (error) {
+      logSupabaseError('Error fetching history', error);
+      return { data: [], error };
+    }
+
+    return { data: data || [], error: null };
+  } catch (error) {
+    console.error('Error in getDocumentHistory:', error);
+    return { data: [], error };
+  }
+}
+
+/**
+ * Helper: Upsert presence for current user
+ */
+export async function upsertPresence(documentId, status = 'online') {
+  try {
+    // Get session instead of user to avoid timeout
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError) throw sessionError;
+    if (!session?.user) return { success: false };
+
+    const user = session.user;
+
+    const { error } = await supabase
+      .from('presence')
+      .upsert({
+        user_id: user.id,
+        document_id: documentId,
+        status,
+        last_seen: new Date().toISOString(),
+      }, {
+        onConflict: 'user_id,document_id'
+      });
+
+    if (error) {
+      logSupabaseError('Error updating presence', error);
+      return { success: false };
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error('Error in upsertPresence:', error);
+    return { success: false };
+  }
+}
+
+/**
+ * Helper: Get active presence for a document
+ */
+export async function getDocumentPresence(documentId) {
+  try {
+    // Get presence from last 5 minutes
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    
+    const { data, error } = await supabase
+      .from('presence')
+      .select('user_id, status, last_seen')
+      .eq('document_id', documentId)
+      .gte('last_seen', fiveMinutesAgo)
+      .eq('status', 'online');
+
+    if (error) {
+      logSupabaseError('Error fetching presence', error);
+      return [];
+    }
+
+    return data || [];
+  } catch (error) {
+    console.error('Error in getDocumentPresence:', error);
+    return [];
   }
 }
