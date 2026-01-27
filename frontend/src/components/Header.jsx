@@ -6,7 +6,7 @@ import ThemeToggle from './ThemeToggle';
 import ConnectionStatus from './ConnectionStatus';
 import '../styles/Header.css';
 
-export default function Header({ user, profile, onSignOut, provider }) {
+export default function Header({ user, profile, onSignOut, provider, children }) {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const menuRef = useRef(null);
 
@@ -56,6 +56,10 @@ export default function Header({ user, profile, onSignOut, provider }) {
       <div className="header-left">
         <AnimatedLogo size={32} />
         <h1 className="header-title">NotePulse</h1>
+      </div>
+
+      <div className="header-center">
+        {/* Save Indicator will be injected here by parent */}
       </div>
 
       <div className="header-right">

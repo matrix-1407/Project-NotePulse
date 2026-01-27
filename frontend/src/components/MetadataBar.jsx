@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 
-export default function MetadataBar({ document }) {
+export default function MetadataBar({ document, onTitleChange }) {
   const [lastEditedBy, setLastEditedBy] = useState('Unknown');
   const [lastSavedTime, setLastSavedTime] = useState('');
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [titleInput, setTitleInput] = useState('');
 
   useEffect(() => {
     if (!document) return;
@@ -41,14 +43,65 @@ export default function MetadataBar({ document }) {
     fetchEditor();
   }, [document]);
 
-  if (!document) return null;
+  const handleTitleClick = () => {
+    setTitleInput(document?.title || 'Untitled Document');
+    setIsEditingTitle(true);
+  };
+
+  const handleTitleSave = async () => {
+    if (!document || !titleInput.trim()) {
+      setIsEditingTitle(false);
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('documents')
+        .update({ title: titleInput.trim() })
+        .eq('id', document.id);
+
+      if (!error && onTitleChange) {
+        onTitleChange(titleInput.trim());
+      }
+    } catch (err) {
+      console.error('Failed to update title:', err);
+    }
+    
+    setIsEditingTitle(false);
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      handleTitleSave();
+    } else if (e.key === 'Escape') {
+      setIsEditingTitle(false);
+    }
+  };
+
+  if (!document) {
+    return null;
+  }
 
   const timeAgo = document.updated_at ? getTimeAgo(new Date(document.updated_at)) : '';
 
   return (
     <div className="metadata-bar">
       <div className="metadata-title">
-        <strong>{document.title || 'Untitled Document'}</strong>
+        {isEditingTitle ? (
+          <input
+            type="text"
+            value={titleInput}
+            onChange={(e) => setTitleInput(e.target.value)}
+            onBlur={handleTitleSave}
+            onKeyDown={handleKeyDown}
+            autoFocus
+            placeholder="Document title"
+          />
+        ) : (
+          <strong onClick={handleTitleClick} title="Click to rename">
+            {document.title || 'Untitled Document'}
+          </strong>
+        )}
       </div>
       <div className="metadata-info">
         {lastEditedBy && timeAgo && (

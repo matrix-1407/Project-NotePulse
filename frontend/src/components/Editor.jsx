@@ -81,6 +81,8 @@ export default function Editor({ user, profile, onSignOut }) {
   const handleManualSave = async () => {
     if (!editor || !document) {
       console.warn('Cannot save: editor or document missing');
+      setSaveMessage('Cannot save: No document loaded');
+      setTimeout(() => setSaveMessage(''), 2000);
       return;
     }
 
@@ -88,6 +90,7 @@ export default function Editor({ user, profile, onSignOut }) {
     setIsSaving(true);
     setSaveState('saving');
     setError('');
+    setSaveMessage('');
     const content = editor.getJSON();
 
     try {
@@ -99,7 +102,7 @@ export default function Editor({ user, profile, onSignOut }) {
         setIsDirty(false);
         setLastSavedAt(new Date());
         setSaveState('saved');
-        setSaveMessage('Saved');
+        setSaveMessage('✓ Saved successfully!');
         
         // Create snapshot for history
         console.log('Creating snapshot for document:', document.id);
@@ -295,7 +298,7 @@ export default function Editor({ user, profile, onSignOut }) {
       // F: Focus mode (only if not in an input)
       else if (e.key === 'f' && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
         const activeElement = document.activeElement;
-        if (activeElement.tagName !== 'INPUT' && activeElement.tagName !== 'TEXTAREA' && !activeElement.isContentEditable) {
+        if (activeElement && activeElement.tagName !== 'INPUT' && activeElement.tagName !== 'TEXTAREA' && !activeElement.isContentEditable) {
           e.preventDefault();
           setFocusMode((prev) => !prev);
         }
@@ -421,7 +424,9 @@ export default function Editor({ user, profile, onSignOut }) {
 
   return (
     <>
-      <Header user={user} profile={profile} onSignOut={onSignOut} provider={provider} />
+      <Header user={user} profile={profile} onSignOut={onSignOut} provider={provider}>
+        <SaveIndicator saveState={saveState} lastSavedAt={lastSavedAt} error={error} />
+      </Header>
       
       <CommandPalette
         isOpen={showCommandPalette}
@@ -430,9 +435,16 @@ export default function Editor({ user, profile, onSignOut }) {
       />
       
       <div className={`editor-container ${focusMode ? 'focus-mode' : ''}`}>
+        <MetadataBar 
+          document={document} 
+          onTitleChange={(newTitle) => {
+            setDocument(prev => prev ? { ...prev, title: newTitle } : prev);
+            setIsDirty(true);
+          }}
+        />
+
+        {/* Action buttons bar */}
         <div className="editor-toolbar-section">
-          <SaveIndicator saveState={saveState} lastSavedAt={lastSavedAt} error={error} />
-          
           <div className="editor-actions">
             <button onClick={handleManualSave} disabled={isSaving} className="save-btn">
               Save Now
@@ -444,11 +456,11 @@ export default function Editor({ user, profile, onSignOut }) {
                 url.searchParams.set('doc', document.id);
                 try {
                   await navigator.clipboard.writeText(url.toString());
-                  setSaveMessage('Link copied');
+                  setSaveMessage('Link copied!');
                   setTimeout(() => setSaveMessage(''), 2000);
                 } catch {
-                  setSaveMessage(url.toString());
-                  setTimeout(() => setSaveMessage(''), 5000);
+                  setSaveMessage('Failed to copy');
+                  setTimeout(() => setSaveMessage(''), 2000);
                 }
               }}
               className="history-btn"
@@ -456,69 +468,74 @@ export default function Editor({ user, profile, onSignOut }) {
             >
               Share
             </button>
-          <button
-            onClick={() => {
-              const current = docIdHint || document?.id || '';
-              const input = window.prompt('Enter a Document ID (uuid) or a full share link:', current);
-              if (!input) return;
-              let nextId = input.trim();
-              try {
-                if (nextId.includes('http')) {
-                  const url = new URL(nextId);
-                  const fromParam = new URLSearchParams(url.search).get('doc');
-                  if (fromParam) nextId = fromParam;
-                }
-              } catch {
-                // ignore
-              }
-              const url = new URL(window.location.href);
-              url.searchParams.set('doc', nextId);
-              window.location.href = url.toString();
-            }}
-            className="history-btn"
-            title="Join a shared document"
-          >
-            Join
-          </button>
-          {document?.user_id === user?.id && (
             <button
-              onClick={async () => {
-                if (!document?.id) return;
-                const email = window.prompt('Invite collaborator by email:');
-                if (!email) return;
-
-                const roleInput = window.prompt('Role for collaborator? (editor/viewer)', 'editor');
-                const role = (roleInput || 'editor').trim().toLowerCase() === 'viewer' ? 'viewer' : 'editor';
-
-                setCollabMessage('Inviting...');
-                const result = await inviteCollaboratorByEmail(document.id, email, role);
-                if (!result?.success) {
-                  setCollabMessage(result?.error || 'Invite failed');
-                  setTimeout(() => setCollabMessage(''), 4000);
-                  return;
+              onClick={() => {
+                const current = docIdHint || document?.id || '';
+                const input = window.prompt('Enter a Document ID (uuid) or a full share link:', current);
+                if (!input) return;
+                let nextId = input.trim();
+                try {
+                  if (nextId.includes('http')) {
+                    const url = new URL(nextId);
+                    const fromParam = new URLSearchParams(url.search).get('doc');
+                    if (fromParam) nextId = fromParam;
+                  }
+                } catch {
+                  // ignore
                 }
-
-                setCollabMessage('Invited');
-                setTimeout(() => setCollabMessage(''), 2500);
-                const list = await getDocumentCollaborators(document.id);
-                setCollaborators(list);
+                const url = new URL(window.location.href);
+                url.searchParams.set('doc', nextId);
+                window.location.href = url.toString();
               }}
               className="history-btn"
-              title="Invite collaborator"
+              title="Join a shared document"
             >
-              Invite
+              Join
             </button>
-          )}
-          <button onClick={() => setShowHistory(!showHistory)} className="history-btn">
-            History
-          </button>
-          <button onClick={onSignOut} className="sign-out-btn">
-            Sign Out
-          </button>
-        </div>
-      </div>
+            {document?.user_id === user?.id && (
+              <button
+                onClick={async () => {
+                  if (!document?.id) return;
+                  const email = window.prompt('Invite collaborator by email:');
+                  if (!email) return;
 
-      <MetadataBar document={document} />
+                  const roleInput = window.prompt('Role for collaborator? (editor/viewer)', 'editor');
+                  const role = (roleInput || 'editor').trim().toLowerCase() === 'viewer' ? 'viewer' : 'editor';
+
+                  setCollabMessage('Inviting...');
+                  const result = await inviteCollaboratorByEmail(document.id, email, role);
+                  if (!result?.success) {
+                    setCollabMessage(result?.error || 'Invite failed');
+                    setTimeout(() => setCollabMessage(''), 4000);
+                    return;
+                  }
+
+                  setCollabMessage('Invited successfully!');
+                  setTimeout(() => setCollabMessage(''), 2500);
+                  const list = await getDocumentCollaborators(document.id);
+                  setCollaborators(list);
+                }}
+                className="history-btn"
+                title="Invite collaborator"
+              >
+                Invite
+              </button>
+            )}
+            <button onClick={() => setShowHistory(!showHistory)} className="history-btn">
+              History
+            </button>
+            <button onClick={onSignOut} className="sign-out-btn">
+              Sign Out
+            </button>
+          </div>
+          
+          {/* Show feedback messages */}
+          {saveMessage && (
+            <div className="save-message-toast">
+              {saveMessage}
+            </div>
+          )}
+        </div>
 
       {(collabMessage || (document?.user_id !== user?.id && collaborators.length > 0)) && (
         <div className="editor-subheader">
@@ -592,21 +609,25 @@ export default function Editor({ user, profile, onSignOut }) {
           <EditorContent editor={editor} className="editor-content" />
         </div>
 
-        <div>
+        <div className="sidebar-right">
           <PresencePanel provider={provider} documentId={document?.id} />
           {collaborators.length > 0 && (
-            <div className="presence-panel" style={{ marginTop: 12 }}>
-              <h3>Collaborators ({collaborators.length})</h3>
-              <div className="presence-list">
+            <div className="collaborators-panel">
+              <div className="presence-header">
+                <h3>Collaborators ({collaborators.length})</h3>
+              </div>
+              <div className="collaborators-list">
                 {collaborators.map((c) => {
                   const label = c.profile?.full_name || c.profile?.email || c.user_id?.substring(0, 8);
                   return (
-                    <div key={c.user_id} className="presence-user" title={c.profile?.email || ''}>
-                      <div className="presence-avatar" style={{ backgroundColor: '#475569' }}>
+                    <div key={c.user_id} className="collaborator-item" title={c.profile?.email || ''}>
+                      <div className="collaborator-avatar" style={{ backgroundColor: '#475569' }}>
                         {(label || '?').substring(0, 2).toUpperCase()}
                       </div>
-                      <span className="presence-name">{label}</span>
-                      <span style={{ marginLeft: 'auto', opacity: 0.7, fontSize: 12 }}>{c.role}</span>
+                      <div className="collaborator-info">
+                        <span className="collaborator-name">{label}</span>
+                        <span className="collaborator-role">{c.role}</span>
+                      </div>
                     </div>
                   );
                 })}

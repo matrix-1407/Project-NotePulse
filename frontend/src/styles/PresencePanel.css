@@ -1,26 +1,36 @@
 .presence-panel {
-  padding: 16px;
+  padding: 18px;
   background: var(--card-bg);
   border-radius: var(--radius-lg);
   border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-soft);
 }
 
 .presence-header {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
 }
 
 .presence-icon {
-  color: var(--text-muted);
+  color: var(--text-secondary);
 }
 
-.presence-panel h3 {
+.presence-panel h3,
+.presence-panel .presence-section-title {
   font-size: 14px;
   font-weight: 600;
   color: var(--text-primary);
   margin: 0;
+}
+
+.presence-panel .presence-section {
+  margin-top: 16px;
+}
+
+.presence-panel .presence-section:first-of-type {
+  margin-top: 0;
 }
 
 .presence-empty {

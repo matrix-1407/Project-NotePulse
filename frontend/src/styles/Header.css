@@ -20,6 +20,13 @@
   gap: 12px;
 }
 
+.header-center {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  justify-content: center;
+}
+
 .header-title {
   font-size: 20px;
   font-weight: 700;
