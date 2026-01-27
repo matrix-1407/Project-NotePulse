@@ -1,0 +1,174 @@
+/* ============================================
+   NotePulse Theme Tokens & Variables
+   ============================================ */
+
+/* === Shared Tokens (all themes) === */
+:root {
+  /* Spacing & Layout */
+  --radius-lg: 14px;
+  --radius-md: 10px;
+  --radius-sm: 6px;
+  --container-gap: 16px;
+  --header-height: 64px;
+  
+  /* Animation */
+  --duration-fast: 160ms;
+  --duration-medium: 320ms;
+  --duration-slow: 480ms;
+  --easing: cubic-bezier(0.2, 0.9, 0.3, 1);
+  --easing-bounce: cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  
+  /* Shadows */
+  --shadow-soft: 0 8px 30px rgba(2, 6, 23, 0.45);
+  --shadow-medium: 0 4px 20px rgba(2, 6, 23, 0.35);
+  --shadow-hard: 0 2px 10px rgba(2, 6, 23, 0.25);
+  
+  /* Glass */
+  --glass: rgba(255, 255, 255, 0.03);
+  --glass-strong: rgba(255, 255, 255, 0.06);
+  --glass-blur: 12px;
+  
+  /* Accent Base */
+  --accent-base: #4f46e5;
+}
+
+/* === Dark Theme (Default) === */
+:root,
+:root[data-theme="dark"] {
+  /* Backgrounds */
+  --bg-1: #070912;
+  --bg-2: #0e1524;
+  --bg-3: #1a202e;
+  --panel: linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.01));
+  --card-bg: rgba(255, 255, 255, 0.02);
+  --card-hover: rgba(255, 255, 255, 0.04);
+  
+  /* Text */
+  --text-primary: #e6eef9;
+  --text-secondary: #9aa4b2;
+  --text-muted: #7b8896;
+  --text-inverse: #070912;
+  
+  /* Accents */
+  --accent-1: #4f46e5; /* indigo */
+  --accent-2: #06b6d4; /* cyan */
+  --accent-3: #8b5cf6; /* violet */
+  --accent-grad: linear-gradient(135deg, var(--accent-1), var(--accent-2));
+  --accent-hover: #6366f1;
+  
+  /* Message/Chat Bubbles */
+  --me-bg: linear-gradient(90deg, rgba(79, 70, 229, 1), rgba(6, 182, 212, 1));
+  --me-text: #ffffff;
+  --other-bg: rgba(255, 255, 255, 0.04);
+  --other-text: var(--text-primary);
+  
+  /* Borders */
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.15);
+  
+  /* Status Colors */
+  --status-online: #10b981;
+  --status-away: #f59e0b;
+  --status-offline: #6b7280;
+  --status-error: #ef4444;
+  
+  /* Overlays */
+  --overlay: rgba(7, 9, 18, 0.85);
+  --modal-bg: var(--bg-2);
+}
+
+/* === Light Theme === */
+:root[data-theme="light"] {
+  /* Backgrounds */
+  --bg-1: #f7fafc;
+  --bg-2: #eef2f7;
+  --bg-3: #e2e8f0;
+  --panel: linear-gradient(180deg, #ffffff, #fbfdff);
+  --card-bg: #ffffff;
+  --card-hover: #f8fafc;
+  
+  /* Text */
+  --text-primary: #0f1724;
+  --text-secondary: #475569;
+  --text-muted: #64748b;
+  --text-inverse: #ffffff;
+  
+  /* Accents */
+  --accent-1: #2563eb; /* blue */
+  --accent-2: #7c3aed; /* violet */
+  --accent-3: #06b6d4; /* cyan */
+  --accent-grad: linear-gradient(135deg, var(--accent-1), var(--accent-2));
+  --accent-hover: #1d4ed8;
+  
+  /* Message/Chat Bubbles */
+  --me-bg: linear-gradient(90deg, #2563eb, #7c3aed);
+  --me-text: #ffffff;
+  --other-bg: rgba(15, 23, 42, 0.04);
+  --other-text: var(--text-primary);
+  
+  /* Borders */
+  --border-subtle: rgba(15, 23, 42, 0.08);
+  --border-strong: rgba(15, 23, 42, 0.15);
+  
+  /* Status Colors */
+  --status-online: #059669;
+  --status-away: #d97706;
+  --status-offline: #52525b;
+  --status-error: #dc2626;
+  
+  /* Overlays */
+  --overlay: rgba(15, 23, 42, 0.75);
+  --modal-bg: #ffffff;
+  
+  /* Shadows (lighter for light theme) */
+  --shadow-soft: 0 8px 30px rgba(15, 23, 42, 0.12);
+  --shadow-medium: 0 4px 20px rgba(15, 23, 42, 0.08);
+  --shadow-hard: 0 2px 10px rgba(15, 23, 42, 0.06);
+  
+  /* Glass (inverted for light) */
+  --glass: rgba(15, 23, 42, 0.02);
+  --glass-strong: rgba(15, 23, 42, 0.04);
+}
+
+/* === Reduced Motion Support === */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-fast: 0ms;
+    --duration-medium: 0ms;
+    --duration-slow: 0ms;
+  }
+  
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* === Utility Classes === */
+.theme-transition {
+  transition: background-color var(--duration-medium) var(--easing),
+              color var(--duration-medium) var(--easing),
+              border-color var(--duration-medium) var(--easing);
+}
+
+.glass-card {
+  background: var(--card-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-soft);
+}
+
+.hover-lift {
+  transition: transform var(--duration-fast) var(--easing),
+              box-shadow var(--duration-fast) var(--easing);
+}
+
+.hover-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-medium);
+}

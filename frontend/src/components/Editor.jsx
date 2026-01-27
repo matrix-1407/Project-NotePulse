@@ -8,12 +8,13 @@ import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 import { getDocumentById, getDocumentCollaborators, getUserDocument, inviteCollaboratorByEmail, saveDocument, saveDocumentSnapshot, upsertPresence } from '../supabaseClient';
 import { useUnsavedWarning } from '../hooks/useUnsavedWarning';
+import Header from './Header';
+import SaveIndicator from './SaveIndicator';
 import PresencePanel from './PresencePanel';
-import ConnectionStatus from './ConnectionStatus';
 import MetadataBar from './MetadataBar';
 import HistoryPanel from './HistoryPanel';
 
-export default function Editor({ user, onSignOut }) {
+export default function Editor({ user, profile, onSignOut }) {
   const [document, setDocument] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -23,6 +24,7 @@ export default function Editor({ user, onSignOut }) {
   const [isDirty, setIsDirty] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
+  const [saveState, setSaveState] = useState('saved'); // 'saving' | 'saved' | 'unsaved' | 'offline'
   const [provider, setProvider] = useState(null);
   const [docIdHint, setDocIdHint] = useState('');
   const [collaborators, setCollaborators] = useState([]);
@@ -81,6 +83,7 @@ export default function Editor({ user, onSignOut }) {
 
     console.log('🔵 Starting manual save...');
     setIsSaving(true);
+    setSaveState('saving');
     setError('');
     const content = editor.getJSON();
 
@@ -92,7 +95,8 @@ export default function Editor({ user, onSignOut }) {
         setError('');
         setIsDirty(false);
         setLastSavedAt(new Date());
-        setSaveMessage('Saved (manual)');
+        setSaveState('saved');
+        setSaveMessage('Saved');
         
         // Create snapshot for history
         console.log('Creating snapshot for document:', document.id);
@@ -108,11 +112,13 @@ export default function Editor({ user, onSignOut }) {
       } else {
         const errorMsg = result.error || 'Failed to save document';
         setError(errorMsg);
+        setSaveState('unsaved');
         console.error('❌ Save error:', result.error);
       }
     } catch (err) {
       console.error('💥 Exception during save:', err);
       setError('Save exception: ' + (err.message || 'Unknown'));
+      setSaveState('unsaved');
     } finally {
       console.log('🔵 Save completed, setting isSaving to false');
       setIsSaving(false);
@@ -249,6 +255,13 @@ export default function Editor({ user, onSignOut }) {
     };
   }, [document?.id]);
 
+  // Update save state based on isDirty
+  useEffect(() => {
+    if (isDirty && saveState === 'saved') {
+      setSaveState('unsaved');
+    }
+  }, [isDirty, saveState]);
+
   // Load collaborators list (best-effort)
   useEffect(() => {
     let cancelled = false;
@@ -370,46 +383,36 @@ export default function Editor({ user, onSignOut }) {
   }
 
   return (
-    <div className="editor-container">
-      <div className="editor-header">
-        <div className="editor-title-section">
-          <h1>NotePulse Editor</h1>
-          <p className="user-info">{user?.email}</p>
-        </div>
-        <div className="editor-actions">
-          <ConnectionStatus provider={provider} />
-          <div className="save-status">
-            {saveMessage && <span className="save-message">{saveMessage}</span>}
-            {error && <span className="error-indicator">{error}</span>}
-            {isSaving && <span className="saving-indicator">Saving...</span>}
-            {!error && !isSaving && !saveMessage && (
-              <span className="saved-indicator">
-                {lastSavedAt ? `Saved ${lastSavedAt.toLocaleTimeString()}` : 'Saved'}
-              </span>
-            )}
-          </div>
-          <button onClick={handleManualSave} disabled={isSaving} className="save-btn">
-            Save Now
-          </button>
-          <button
-            onClick={async () => {
-              if (!document?.id) return;
-              const url = new URL(window.location.href);
-              url.searchParams.set('doc', document.id);
-              try {
-                await navigator.clipboard.writeText(url.toString());
-                setSaveMessage('Link copied');
-                setTimeout(() => setSaveMessage(''), 2000);
-              } catch {
-                setSaveMessage(url.toString());
-                setTimeout(() => setSaveMessage(''), 5000);
-              }
-            }}
-            className="history-btn"
-            title="Copy share link"
-          >
-            Share
-          </button>
+    <>
+      <Header user={user} profile={profile} onSignOut={onSignOut} provider={provider} />
+      
+      <div className="editor-container">
+        <div className="editor-toolbar-section">
+          <SaveIndicator saveState={saveState} lastSavedAt={lastSavedAt} error={error} />
+          
+          <div className="editor-actions">
+            <button onClick={handleManualSave} disabled={isSaving} className="save-btn">
+              Save Now
+            </button>
+            <button
+              onClick={async () => {
+                if (!document?.id) return;
+                const url = new URL(window.location.href);
+                url.searchParams.set('doc', document.id);
+                try {
+                  await navigator.clipboard.writeText(url.toString());
+                  setSaveMessage('Link copied');
+                  setTimeout(() => setSaveMessage(''), 2000);
+                } catch {
+                  setSaveMessage(url.toString());
+                  setTimeout(() => setSaveMessage(''), 5000);
+                }
+              }}
+              className="history-btn"
+              title="Copy share link"
+            >
+              Share
+            </button>
           <button
             onClick={() => {
               const current = docIdHint || document?.id || '';
@@ -599,6 +602,7 @@ export default function Editor({ user, onSignOut }) {
           }}
         />
       )}
-    </div>
+      </div>
+    </>
   );
 }
