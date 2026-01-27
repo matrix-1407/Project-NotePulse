@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
-import { supabase } from '../supabaseClient';
+import { supabase, clearAllNotePulseStorage } from '../supabaseClient';
 
 function getWsUrl() {
   try {
@@ -21,8 +21,11 @@ function hashToColor(input) {
     hash = (hash << 5) - hash + input.charCodeAt(i);
     hash |= 0;
   }
-  const hue = Math.abs(hash) % 360;
-  return `hsl(${hue} 70% 45%)`;
+  // Convert hash to RGB hex color
+  const r = (hash & 0xFF0000) >> 16;
+  const g = (hash & 0x00FF00) >> 8;
+  const b = hash & 0x0000FF;
+  return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
 }
 
 export default function Debug() {
@@ -215,6 +218,30 @@ export default function Debug() {
             <div><strong>Authenticated:</strong> {sessionUser ? 'yes' : 'no'}</div>
             <div><strong>User:</strong> {sessionUser?.email || '(none)'}</div>
             <div><strong>User ID:</strong> {sessionUser?.id || '(none)'}</div>
+            <div style={{ marginTop: '0.5rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <button
+                onClick={async () => {
+                  // Clear all NotePulse localStorage keys (all users)
+                  clearAllNotePulseStorage();
+                  // Sign out to reset auth-derived caches
+                  try { await supabase.auth.signOut(); } catch {}
+                  // Reload to apply clean state
+                  window.location.reload();
+                }}
+                style={{ padding: '0.5rem 1rem', cursor: 'pointer' }}
+              >
+                🔄 Reset App & Reload
+              </button>
+              <button
+                onClick={() => {
+                  clearAllNotePulseStorage();
+                  alert('Cleared all NotePulse storage. Sign out and reload to apply.');
+                }}
+                style={{ padding: '0.5rem 1rem', cursor: 'pointer', background: '#f1f5f9', border: '1px solid #cbd5e1' }}
+              >
+                Clear Storage Only
+              </button>
+            </div>
           </div>
         )}
       </section>

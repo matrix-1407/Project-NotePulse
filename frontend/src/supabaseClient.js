@@ -38,6 +38,35 @@ function setLastOpenedDocumentId(userId, documentId) {
   }
 }
 
+function clearLastOpenedDocumentId(userId) {
+  try {
+    if (!userId) return;
+    window.localStorage.removeItem(`notepulse:lastDocId:${userId}`);
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * Helper: Clear all NotePulse localStorage keys (for all users)
+ * Useful for debugging stale state issues
+ */
+export function clearAllNotePulseStorage() {
+  try {
+    const keys = [];
+    for (let i = 0; i < window.localStorage.length; i++) {
+      const key = window.localStorage.key(i);
+      if (key && key.startsWith('notepulse:')) {
+        keys.push(key);
+      }
+    }
+    keys.forEach((k) => window.localStorage.removeItem(k));
+    console.log('Cleared NotePulse storage keys:', keys.length);
+  } catch (e) {
+    console.warn('Failed to clear NotePulse storage:', e);
+  }
+}
+
 // Promise timeout helper to avoid hanging spinners when Supabase calls stall
 async function withTimeout(promise, ms, label) {
   let timeoutId;
@@ -220,6 +249,13 @@ export async function getUserDocument(userId) {
       if (lastDocError) {
         // Non-fatal: fall back to default document selection
         logSupabaseError('Error fetching last opened document', lastDocError);
+        // Clear the stale hint so future loads don't get stuck on a 403/missing doc
+        clearLastOpenedDocumentId(effectiveUserId);
+      }
+
+      if (!lastDoc) {
+        // If the hinted doc no longer exists, clear the hint
+        clearLastOpenedDocumentId(effectiveUserId);
       }
     }
 
@@ -356,7 +392,7 @@ export async function saveDocument(documentId, content) {
         updated_at: new Date().toISOString(),
       })
       .eq('id', documentId),
-      7000,
+      15000,
       'update document'
     );
 
@@ -371,10 +407,14 @@ export async function saveDocument(documentId, content) {
   } catch (error) {
     if (error?.name === 'AbortError') {
       console.warn('saveDocument aborted');
-      return { success: false, error: 'aborted' };
+      return { success: false, error: 'Save aborted' };
+    }
+    if (error?.message?.includes('Timeout')) {
+      console.error('❌ Save timeout - check network connection');
+      return { success: false, error: 'Save timeout - please retry' };
     }
     console.error('Error in saveDocument:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: error.message || 'Unknown error' };
   }
 }
 
@@ -454,6 +494,7 @@ export async function getDocumentHistory(documentId, limit = 20) {
 
 /**
  * Helper: Upsert presence for current user
+ * Non-blocking - errors are logged but don't propagate
  */
 export async function upsertPresence(documentId, status = 'online') {
   try {
@@ -464,7 +505,8 @@ export async function upsertPresence(documentId, status = 'online') {
 
     const user = session.user;
 
-    const { error } = await supabase
+    // Fire and forget - don't wait for response to avoid blocking
+    supabase
       .from('presence')
       .upsert({
         user_id: user.id,
@@ -473,16 +515,21 @@ export async function upsertPresence(documentId, status = 'online') {
         last_seen: new Date().toISOString(),
       }, {
         onConflict: 'user_id,document_id'
+      })
+      .then(({ error }) => {
+        if (error) {
+          // Log but don't throw - presence is non-critical
+          console.debug('Presence update failed:', error.message);
+        }
+      })
+      .catch(() => {
+        // Silently ignore presence errors
       });
-
-    if (error) {
-      logSupabaseError('Error updating presence', error);
-      return { success: false };
-    }
 
     return { success: true };
   } catch (error) {
-    console.error('Error in upsertPresence:', error);
+    // Silently fail - presence is not critical for core functionality
+    console.debug('Error in upsertPresence:', error.name);
     return { success: false };
   }
 }

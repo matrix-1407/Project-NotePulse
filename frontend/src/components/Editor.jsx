@@ -28,6 +28,7 @@ export default function Editor({ user, onSignOut }) {
   const [collaborators, setCollaborators] = useState([]);
   const [collabMessage, setCollabMessage] = useState('');
   const saveTimeoutRef = useRef(null);
+  const presenceIntervalRef = useRef(null);
   const hasLoadedRef = useRef(false);
   const initialContentAppliedRef = useRef(false);
   const loadCompletedRef = useRef(false);
@@ -42,8 +43,11 @@ export default function Editor({ user, onSignOut }) {
       hash = (hash << 5) - hash + input.charCodeAt(i);
       hash |= 0;
     }
-    const hue = Math.abs(hash) % 360;
-    return `hsl(${hue} 70% 45%)`;
+    // Convert hash to RGB hex color for TipTap CollaborationCursor
+    const r = (hash & 0xFF0000) >> 16;
+    const g = (hash & 0x00FF00) >> 8;
+    const b = hash & 0x0000FF;
+    return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
   };
 
   const getWsUrl = () => {
@@ -70,35 +74,49 @@ export default function Editor({ user, onSignOut }) {
   }
 
   const handleManualSave = async () => {
-    if (!editor || !document) return;
-
-    setIsSaving(true);
-    const content = editor.getJSON();
-
-    const result = await saveDocument(document.id, content);
-
-    if (result.success) {
-      setError('');
-      setIsDirty(false);
-      setLastSavedAt(new Date());
-      setSaveMessage('Saved (manual)');
-      
-      // Create snapshot for history
-      console.log('Creating snapshot for document:', document.id);
-      const snapshotResult = await saveDocumentSnapshot(document.id, content, 'manual');
-      console.log('Snapshot result:', snapshotResult);
-
-      if (!snapshotResult?.success) {
-        setError(snapshotResult?.error || 'Failed to save history snapshot');
-      }
-      
-      setTimeout(() => setSaveMessage(''), 3000);
-    } else {
-      setError('Failed to save document');
-      console.error('Save error:', result.error);
+    if (!editor || !document) {
+      console.warn('Cannot save: editor or document missing');
+      return;
     }
 
-    setIsSaving(false);
+    console.log('🔵 Starting manual save...');
+    setIsSaving(true);
+    setError('');
+    const content = editor.getJSON();
+
+    try {
+      const result = await saveDocument(document.id, content);
+      console.log('📥 Save result:', result);
+
+      if (result.success) {
+        setError('');
+        setIsDirty(false);
+        setLastSavedAt(new Date());
+        setSaveMessage('Saved (manual)');
+        
+        // Create snapshot for history
+        console.log('Creating snapshot for document:', document.id);
+        const snapshotResult = await saveDocumentSnapshot(document.id, content, 'manual');
+        console.log('Snapshot result:', snapshotResult);
+
+        if (!snapshotResult?.success) {
+          console.warn('Snapshot failed but document saved:', snapshotResult?.error);
+          // Don't block on snapshot failure
+        }
+        
+        setTimeout(() => setSaveMessage(''), 3000);
+      } else {
+        const errorMsg = result.error || 'Failed to save document';
+        setError(errorMsg);
+        console.error('❌ Save error:', result.error);
+      }
+    } catch (err) {
+      console.error('💥 Exception during save:', err);
+      setError('Save exception: ' + (err.message || 'Unknown'));
+    } finally {
+      console.log('🔵 Save completed, setting isSaving to false');
+      setIsSaving(false);
+    }
   };
 
   const collaborationCursorExtension = provider
@@ -206,18 +224,28 @@ export default function Editor({ user, onSignOut }) {
   useEffect(() => {
     if (!document?.id) return;
 
-    // Initial presence update
-    upsertPresence(document.id, 'online');
+    // Clear any existing interval first
+    if (presenceIntervalRef.current) {
+      clearInterval(presenceIntervalRef.current);
+      presenceIntervalRef.current = null;
+    }
+
+    // Initial presence update (non-blocking)
+    upsertPresence(document.id, 'online').catch(() => {});
 
     // Update every 15 seconds
-    const interval = setInterval(() => {
-      upsertPresence(document.id, 'online');
+    presenceIntervalRef.current = setInterval(() => {
+      upsertPresence(document.id, 'online').catch(() => {});
     }, 15000);
 
-    // Cleanup on unmount
+    // Cleanup on unmount or doc change
     return () => {
-      clearInterval(interval);
-      upsertPresence(document.id, 'offline');
+      if (presenceIntervalRef.current) {
+        clearInterval(presenceIntervalRef.current);
+        presenceIntervalRef.current = null;
+      }
+      // Set offline status on cleanup (fire and forget)
+      upsertPresence(document.id, 'offline').catch(() => {});
     };
   }, [document?.id]);
 

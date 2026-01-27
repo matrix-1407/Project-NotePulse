@@ -57,11 +57,34 @@ export default function App() {
 
   const handleSignOut = async () => {
     try {
-      await supabase.auth.signOut();
+      console.log('Starting sign out...');
+      
+      // Clear last opened doc for current user to avoid stale state on next login
+      try {
+        const current = user?.id;
+        if (current) {
+          window.localStorage.removeItem(`notepulse:lastDocId:${current}`);
+        }
+      } catch {
+        // ignore
+      }
+
+      // Sign out from Supabase
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        console.error('Supabase sign out error:', error);
+        throw error;
+      }
+      
+      console.log('Sign out successful');
       setUser(null);
       setProfile(null);
+      
+      // Force reload to clear all state
+      setTimeout(() => window.location.reload(), 100);
     } catch (err) {
       console.error('Sign out error:', err);
+      alert('Sign out failed: ' + (err.message || 'Unknown error'));
     }
   };
 
