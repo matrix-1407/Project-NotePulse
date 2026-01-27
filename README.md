@@ -123,6 +123,10 @@ task3-notepulse/
 
 ## 📸 Output
 
+<img width="900" height="808" alt="Image" src="https://github.com/user-attachments/assets/88edab3b-a3a3-4c34-905e-32ad8b330c42" />
+<img width="1024" height="899" alt="Image" src="https://github.com/user-attachments/assets/91359ffd-e8cc-4619-9ef2-6e6f979bc9f5" />
+<img width="899" height="800" alt="Image" src="https://github.com/user-attachments/assets/9dca337e-1b5a-4096-bb4d-80ed5cd05b46" />
+
 ---
 
 ## 📄 License
