@@ -1019,3 +1019,118 @@ body {
   color: #059669;
   font-weight: 500;
 }
+
+/* ============================================
+   Theme Enhancements & Focus Mode
+   ============================================ */
+
+body {
+  background: var(--bg-1);
+  color: var(--text-primary);
+  transition: background-color var(--duration-medium) var(--easing),
+              color var(--duration-medium) var(--easing);
+}
+
+.app {
+  background: var(--bg-1);
+}
+
+.editor-container {
+  transition: max-width var(--duration-medium) var(--easing),
+              margin var(--duration-medium) var(--easing);
+}
+
+/* Focus Mode */
+.editor-container.focus-mode {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.editor-container.focus-mode .presence-panel,
+.editor-container.focus-mode .metadata-bar {
+  display: none;
+}
+
+.editor-container.focus-mode .editor-workspace {
+  max-width: 700px;
+  margin: 0 auto;
+}
+
+/* Loading screen theming */
+.loading-screen {
+  background: var(--bg-1);
+  color: var(--text-secondary);
+}
+
+/* Auth theming */
+.auth-box {
+  background: var(--card-bg);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-soft);
+}
+
+.auth-box h2 {
+  color: var(--text-primary);
+}
+
+.auth-box input {
+  background: var(--bg-2);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+}
+
+.auth-box input:focus {
+  border-color: var(--accent-1);
+}
+
+.auth-box button[type="submit"] {
+  background: var(--accent-grad);
+}
+
+.auth-box button[type="submit"]:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.auth-toggle {
+  color: var(--text-muted);
+}
+
+.auth-toggle button {
+  color: var(--accent-1);
+}
+
+/* Editor toolbar section */
+.editor-toolbar-section {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 24px;
+  background: var(--card-bg);
+  border-bottom: 1px solid var(--border-subtle);
+  position: sticky;
+  top: var(--header-height);
+  z-index: 50;
+}
+
+.editor-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+/* Animations */
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.editor-content {
+  animation: slideIn var(--duration-medium) var(--easing);
+}

@@ -10,6 +10,7 @@ import { getDocumentById, getDocumentCollaborators, getUserDocument, inviteColla
 import { useUnsavedWarning } from '../hooks/useUnsavedWarning';
 import Header from './Header';
 import SaveIndicator from './SaveIndicator';
+import CommandPalette from './CommandPalette';
 import PresencePanel from './PresencePanel';
 import MetadataBar from './MetadataBar';
 import HistoryPanel from './HistoryPanel';
@@ -29,6 +30,8 @@ export default function Editor({ user, profile, onSignOut }) {
   const [docIdHint, setDocIdHint] = useState('');
   const [collaborators, setCollaborators] = useState([]);
   const [collabMessage, setCollabMessage] = useState('');
+  const [showCommandPalette, setShowCommandPalette] = useState(false);
+  const [focusMode, setFocusMode] = useState(false);
   const saveTimeoutRef = useRef(null);
   const presenceIntervalRef = useRef(null);
   const hasLoadedRef = useRef(false);
@@ -276,18 +279,52 @@ export default function Editor({ user, profile, onSignOut }) {
     };
   }, [document?.id]);
 
-  // Ctrl+S keyboard shortcut for manual save
+  // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e) => {
+      // Ctrl/Cmd + S: Manual save
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
         handleManualSave();
+      }
+      // Ctrl/Cmd + K: Command palette
+      else if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        setShowCommandPalette(true);
+      }
+      // F: Focus mode (only if not in an input)
+      else if (e.key === 'f' && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+        const activeElement = document.activeElement;
+        if (activeElement.tagName !== 'INPUT' && activeElement.tagName !== 'TEXTAREA' && !activeElement.isContentEditable) {
+          e.preventDefault();
+          setFocusMode((prev) => !prev);
+        }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [editor, document]);
+
+  // Command palette handler
+  const handleCommand = (commandId) => {
+    switch (commandId) {
+      case 'save':
+        handleManualSave();
+        break;
+      case 'history':
+        setShowHistory(true);
+        break;
+      case 'focus':
+        setFocusMode((prev) => !prev);
+        break;
+      case 'new-doc':
+        alert('New document feature coming soon!');
+        break;
+      default:
+        console.warn('Unknown command:', commandId);
+    }
+  };
 
   // Helper: sanitize content to avoid ProseMirror text selection errors
   const sanitizeContent = (content) => {
@@ -386,7 +423,13 @@ export default function Editor({ user, profile, onSignOut }) {
     <>
       <Header user={user} profile={profile} onSignOut={onSignOut} provider={provider} />
       
-      <div className="editor-container">
+      <CommandPalette
+        isOpen={showCommandPalette}
+        onClose={() => setShowCommandPalette(false)}
+        onCommand={handleCommand}
+      />
+      
+      <div className={`editor-container ${focusMode ? 'focus-mode' : ''}`}>
         <div className="editor-toolbar-section">
           <SaveIndicator saveState={saveState} lastSavedAt={lastSavedAt} error={error} />
           
