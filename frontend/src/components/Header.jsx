@@ -4,10 +4,12 @@ import { User, LogOut, Settings, HelpCircle } from 'lucide-react';
 import AnimatedLogo from './AnimatedLogo';
 import ThemeToggle from './ThemeToggle';
 import ConnectionStatus from './ConnectionStatus';
+import SettingsModal from './SettingsModal';
 import '../styles/Header.css';
 
 export default function Header({ user, profile, onSignOut, provider, children }) {
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const menuRef = useRef(null);
 
   // Close menu on outside click
@@ -105,7 +107,7 @@ export default function Header({ user, profile, onSignOut, provider, children })
                     <div className="user-menu-email">{user.email}</div>
                   </div>
                   <div className="user-menu-divider" />
-                  <button className="user-menu-item" onClick={() => alert('Settings coming soon!')}>
+                  <button className="user-menu-item" onClick={() => { setShowSettings(true); setShowUserMenu(false); }}>
                     <Settings size={16} />
                     <span>Settings</span>
                   </button>
@@ -120,6 +122,13 @@ export default function Header({ user, profile, onSignOut, provider, children })
           </div>
         )}
       </div>
+
+      <SettingsModal
+        isOpen={showSettings}
+        onClose={() => setShowSettings(false)}
+        user={user}
+        profile={profile}
+      />
     </motion.header>
   );
 }
